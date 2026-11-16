@@ -124,6 +124,26 @@ The web client is three static files with no build step: they are copied next to
 service's binary. There are no JavaScript dependencies, on purpose — a ballot has to be
 auditable by reading the page's own source.
 
+## License
+
+Copyright (C) 2026 abalore
+
+Anonyvote is free software: you can redistribute it and modify it under the terms of the GNU
+Affero General Public License as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version. The full text is in [LICENSE](LICENSE).
+
+It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even
+the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+The AGPL is a deliberate choice for this particular program rather than a default. Section 13
+means that anyone who modifies Anonyvote and then lets people vote through it over a network
+owes those voters the corresponding source. A system whose entire premise is that the voter
+need not trust whoever runs it should not be deployable as a closed modification.
+
+That is an obligation, not a proof: the licence cannot demonstrate that the binary serving an
+election is the source that was published. Reproducible builds would, and they do not exist
+here yet.
+
 ## Status
 
 Working end to end and exercised with 1000 voters: blind signatures checked against the
