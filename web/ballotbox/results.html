@@ -55,7 +55,7 @@
         <p id="lookupStatus" class="status"></p>
     </section>
 
-    <footer>
+    <footer id="footer">
         Anonyvote · the same count can be repeated offline with
         <span class="mono">anonyvote-verify results.json</span>, on the file served at
         <a href="/api/results">/api/results</a>.
@@ -66,7 +66,7 @@
 import {
     api, fromBase64, toHex, boardGenesis, boardNext, nullifierOf,
     registrarPublicKey, electionPublicKey, electionPrivateKey,
-    decryptBallot, keyIdentity
+    decryptBallot, keyIdentity, showSourceLink
 } from './anonyvote.js';
 
 const $ = id => document.getElementById(id);
@@ -90,6 +90,10 @@ $('title').textContent = election.name;
 $('subtitle').textContent =
     `${election.candidates.length} candidates · up to ${election.maxChoices} were chosen`;
 $('verification').classList.remove('hidden');
+
+// The source link comes from the live service, not from the published file: what a reader
+// needs is the code of the deployment they are looking at.
+try { showSourceLink($('footer'), (await api('/api/election')).sourceUrl); } catch { /* ignore */ }
 
 const problems = [];
 const say = text => { $('verdict').textContent = text; };

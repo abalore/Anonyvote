@@ -14,6 +14,7 @@ using Anonyvote.Crypto;
 //   Anonyvote:Election    path to election.json
 //   Anonyvote:PrivateKey  path to registrar-private.pem
 //   Anonyvote:Database    path to the census SQLite file
+//   Anonyvote:SourceUrl   where this deployment's source can be obtained (AGPL s.13)
 // ---------------------------------------------------------------------------
 
 // ContentRoot next to the executable, so the web client is served the same way from any
@@ -28,6 +29,7 @@ var config = builder.Configuration.GetSection("Anonyvote");
 var election = ElectionManifest.Load(PathOf(config, "Election", "election.json"));
 var signingKey = KeyFiles.LoadPrivate(PathOf(config, "PrivateKey", "registrar-private.pem"));
 var databasePath = config["Database"] ?? "registrar.db";
+var sourceUrl = config["SourceUrl"];
 
 builder.Services.AddSingleton(election);
 builder.Services.AddSingleton(signingKey);
@@ -40,7 +42,7 @@ app.UseStaticFiles();
 
 app.MapGet("/api/election", (ElectionManifest e, RegistrarStore store) =>
     new ElectionInfo(e.Id, e.Name, e.Candidates, e.MaxChoices,
-        e.RegistrarPublicKeyPem, e.ElectionPublicKeyPem, store.Phase));
+        e.RegistrarPublicKeyPem, e.ElectionPublicKeyPem, store.Phase, sourceUrl));
 
 app.MapPost("/api/register", (RegisterRequest request, RSA key, RegistrarStore store) =>
 {

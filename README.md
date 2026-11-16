@@ -70,6 +70,8 @@ environment variables (or `appsettings.json`, or `--Anonyvote:Key=value`):
 | `Anonyvote__PrivateKey` | registrar | path to `registrar-private.pem` |
 | `Anonyvote__RateLimit__PerSecond` | ballot box | requests per second allowed (500 by default; 0 removes the limit) |
 | `Anonyvote__RateLimit__Queue` | ballot box | how many wait in line before 429s start (200 by default) |
+| `Anonyvote__Results` | ballot box | path to the published `results.json`, once it exists |
+| `Anonyvote__SourceUrl` | both | where this deployment's source can be obtained; shown as a **Source** link on every page |
 
 **Deploy them on different machines.** The entire anonymity guarantee rests on whoever runs
 the ballot box not also holding the registrar's records. And do not put a proxy in front that
@@ -143,6 +145,11 @@ need not trust whoever runs it should not be deployable as a closed modification
 That is an obligation, not a proof: the licence cannot demonstrate that the binary serving an
 election is the source that was published. Reproducible builds would, and they do not exist
 here yet.
+
+If you deploy a modified Anonyvote, set `Anonyvote__SourceUrl` to wherever your source can be
+obtained. Both services then show a **Source** link on every page, which is how the AGPL's own
+appendix suggests a network application should discharge section 13 — rather than leaving each
+voter to ask for it.
 
 ## Status
 

@@ -238,6 +238,16 @@ export const keyIdentity = async key => {
     return `${jwk.n}.${jwk.e}`;
 };
 
+/** AGPL s.13: if this deployment says where its source is, put it in front of the voter. */
+export const showSourceLink = (element, url) => {
+    if (!url) return;
+    const link = document.createElement('a');
+    link.href = url;
+    link.rel = 'noopener';
+    link.textContent = 'Source';
+    element.append(link, ' \u00b7 ');
+};
+
 // --- Talking to the services ------------------------------------------------
 
 export const api = async (path, body) => {

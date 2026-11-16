@@ -2,7 +2,14 @@ namespace Anonyvote.Core;
 
 // HTTP contracts, shared by the services, the simulator and the verifier.
 
-/// <summary>What both services publish about the election. All of it is public.</summary>
+/// <summary>
+/// What both services publish about the election. All of it is public.
+///
+/// <paramref name="SourceUrl"/> is where this deployment's source code can be obtained. The
+/// AGPL's section 13 obliges whoever modifies Anonyvote and runs an election through it to
+/// offer that source to the voters using it; announcing it here means the pages can put the
+/// link in front of them instead of relying on the operator to remember.
+/// </summary>
 public sealed record ElectionInfo(
     string Id,
     string Name,
@@ -10,7 +17,8 @@ public sealed record ElectionInfo(
     int MaxChoices,
     string RegistrarPublicKeyPem,
     string ElectionPublicKeyPem,
-    ElectionPhase Phase);
+    ElectionPhase Phase,
+    string? SourceUrl = null);
 
 /// <summary>Phase 1: a census code plus the blinded message the registrar cannot read.</summary>
 public sealed record RegisterRequest(string Code, string BlindedMessage);

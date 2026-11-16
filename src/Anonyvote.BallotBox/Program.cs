@@ -17,6 +17,7 @@ using Anonyvote.Crypto;
 //   Anonyvote:RateLimit:PerSecond requests per second allowed (0 = no limit)
 //   Anonyvote:RateLimit:Queue     how many wait in line before rejection starts
 //   Anonyvote:Results             path to the published results.json, once it exists
+//   Anonyvote:SourceUrl           where this deployment's source can be obtained (AGPL s.13)
 // ---------------------------------------------------------------------------
 
 // ContentRoot next to the executable, so the web client is served the same way from any
@@ -37,6 +38,7 @@ var registrarKey = KeyFiles.FromPublicPem(election.RegistrarPublicKeyPem);
 var electionKey = KeyFiles.FromPublicPem(election.ElectionPublicKeyPem);
 var databasePath = config["Database"] ?? "ballotbox.db";
 var resultsPath = config["Results"];
+var sourceUrl = config["SourceUrl"];
 
 builder.Services.AddSingleton(election);
 builder.Services.AddSingleton(_ => BallotBoxStore.Open(databasePath, election.Id));
@@ -90,7 +92,7 @@ app.UseStaticFiles();
 
 app.MapGet("/api/election", (ElectionManifest e, BallotBoxStore store) =>
     new ElectionInfo(e.Id, e.Name, e.Candidates, e.MaxChoices,
-        e.RegistrarPublicKeyPem, e.ElectionPublicKeyPem, store.Phase));
+        e.RegistrarPublicKeyPem, e.ElectionPublicKeyPem, store.Phase, sourceUrl));
 
 app.MapPost("/api/cast", (CastRequest request, BallotBoxStore store) =>
 {

@@ -69,7 +69,7 @@
         <p id="checkStatus" class="status"></p>
     </section>
 
-    <footer>
+    <footer id="footer">
         <a href="results.html">Results</a> ·
         the whole board is at <a href="/api/board">/api/board</a>
         and its head at <a href="/api/board/head">/api/board/head</a>.
@@ -77,7 +77,7 @@
 </main>
 
 <script type="module">
-import { electionPublicKey, encryptBallot, toBase64, api } from './anonyvote.js';
+import { electionPublicKey, encryptBallot, toBase64, api, showSourceLink } from './anonyvote.js';
 
 const $ = id => document.getElementById(id);
 const election = await api('/api/election');
@@ -88,6 +88,7 @@ $('title').textContent = election.name;
 $('subtitle').textContent =
     `${election.candidates.length} candidates · up to ${election.maxChoices} are chosen`;
 $('maximum').textContent = election.maxChoices;
+showSourceLink($('footer'), election.sourceUrl);
 
 let credential = JSON.parse(localStorage.getItem(credentialKey) ?? 'null');
 const previousReceipt = JSON.parse(localStorage.getItem(receiptKey) ?? 'null');

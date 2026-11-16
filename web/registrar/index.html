@@ -57,14 +57,14 @@
         </div>
     </section>
 
-    <footer>
+    <footer id="footer">
         Anonyvote · this page's source is auditable: all the blinding happens here, in your
         own browser.
     </footer>
 </main>
 
 <script type="module">
-import { registrarPublicKey, prepareAndBlind, unblind, toBase64, fromBase64, api }
+import { registrarPublicKey, prepareAndBlind, unblind, toBase64, fromBase64, api, showSourceLink }
     from './anonyvote.js';
 
 const $ = id => document.getElementById(id);
@@ -74,6 +74,7 @@ const storageKey = `anonyvote:credential:${election.id}`;
 $('title').textContent = election.name;
 $('subtitle').textContent =
     `${election.candidates.length} candidates · up to ${election.maxChoices} are chosen`;
+showSourceLink($('footer'), election.sourceUrl);
 
 const saved = localStorage.getItem(storageKey);
 if (saved) {
