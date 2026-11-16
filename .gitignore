@@ -1,0 +1,29 @@
+# --- .NET ---
+bin/
+obj/
+publish/
+*.user
+.vs/
+.idea/
+
+# --- Web client, copied from web/ on every build ---
+src/*/wwwroot/
+
+# --- Secrets and per-election state: NEVER in Git ---
+*.pem
+*.key
+keys/
+secrets/
+*.db
+*.db-shm
+*.db-wal
+
+# --- Outputs: handed-out codes, published board, results ---
+codes-*.txt
+board-*.json
+results-*.json
+simulation/
+out/
+
+# --- Misc ---
+*.log

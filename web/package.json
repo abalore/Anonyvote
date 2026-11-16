@@ -1,0 +1,6 @@
+{
+  "name": "anonyvote-client",
+  "private": true,
+  "type": "module",
+  "description": "This only exists so that Node treats these files as ES modules when running the interoperability test. The browser already loads them as modules through the script's type=module. There are no dependencies and no build step: the client is three static files."
+}

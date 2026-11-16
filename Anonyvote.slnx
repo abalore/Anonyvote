@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Anonyvote.Admin/Anonyvote.Admin.csproj" />
+    <Project Path="src/Anonyvote.Core/Anonyvote.Core.csproj" />
+    <Project Path="src/Anonyvote.Crypto/Anonyvote.Crypto.csproj" />
+    <Project Path="src/Anonyvote.Registrar/Anonyvote.Registrar.csproj" />
+    <Project Path="src/Anonyvote.BallotBox/Anonyvote.BallotBox.csproj" />
+    <Project Path="src/Anonyvote.Verify/Anonyvote.Verify.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Anonyvote.Tests/Anonyvote.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Anonyvote.Simulator/Anonyvote.Simulator.csproj" />
+  </Folder>
+</Solution>

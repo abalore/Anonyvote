@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Results — Anonyvote</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<main>
+    <header>
+        <span class="phase">Results</span>
+        <h1 id="title">Loading…</h1>
+        <p id="subtitle"></p>
+    </header>
+
+    <div id="unpublished" class="panel notice hidden"></div>
+
+    <section id="verification" class="panel hidden">
+        <p id="verdict" class="verdict">Verifying the published file…</p>
+        <p class="muted" id="verdictDetail">
+            Every check below is being recomputed in this browser, from the published file
+            alone. Nothing here is taken on the ballot box's word.
+        </p>
+        <ul id="problems" class="problems hidden"></ul>
+    </section>
+
+    <section id="results" class="panel hidden">
+        <h2>Tally</h2>
+        <ul class="tally" id="tally"></ul>
+    </section>
+
+    <section id="summary" class="panel hidden">
+        <h2>The numbers</h2>
+        <div class="figures" id="figures"></div>
+        <p class="muted" style="margin-top:1rem">
+            Chain head
+            <span class="mono" id="head"></span>
+        </p>
+        <p class="muted" id="custody"></p>
+    </section>
+
+    <section id="receiptLookup" class="panel hidden">
+        <h2>Check your receipt</h2>
+        <p class="muted">
+            Paste the receipt the ballot box gave you when you voted. It is looked up in the
+            published board, here in your browser.
+        </p>
+        <label for="receipt">Receipt</label>
+        <input id="receipt" type="text" autocomplete="off" spellcheck="false"
+               placeholder="64 hexadecimal characters">
+        <div class="actions">
+            <button id="lookup">Look it up</button>
+        </div>
+        <p id="lookupStatus" class="status"></p>
+    </section>
+
+    <footer>
+        Anonyvote · the same count can be repeated offline with
+        <span class="mono">anonyvote-verify results.json</span>, on the file served at
+        <a href="/api/results">/api/results</a>.
+    </footer>
+</main>
+
+<script type="module">
+import {
+    api, fromBase64, toHex, boardGenesis, boardNext, nullifierOf,
+    registrarPublicKey, electionPublicKey, electionPrivateKey,
+    decryptBallot, keyIdentity
+} from './anonyvote.js';
+
+const $ = id => document.getElementById(id);
+
+let published;
+try {
+    published = await api('/api/results');
+} catch {
+    $('title').textContent = 'Results';
+    $('unpublished').classList.remove('hidden');
+    $('unpublished').textContent =
+        'The results have not been published yet. They appear here once voting has closed and ' +
+        'the organiser publishes the board together with the election key.';
+    throw new Error('not published');
+}
+
+const election = published.election;
+const board = published.board;
+
+$('title').textContent = election.name;
+$('subtitle').textContent =
+    `${election.candidates.length} candidates · up to ${election.maxChoices} were chosen`;
+$('verification').classList.remove('hidden');
+
+const problems = [];
+const say = text => { $('verdict').textContent = text; };
+
+// --- 1. The published private key must be the one announced in the manifest ---
+
+const registrar = await registrarPublicKey(election.registrarPublicKeyPem);
+const privateKey = await electionPrivateKey(published.electionPrivateKeyPem);
+const announced = await keyIdentity(await electionPublicKey(election.electionPublicKeyPem));
+
+if (await keyIdentity(privateKey) !== announced)
+    problems.push('the published private key does not match the election public key in the manifest');
+
+// --- 2. Hash chain, signatures, nullifiers ---
+
+const seen = new Set();
+let hash = await boardGenesis(election.id);
+
+for (const [position, entry] of board.entries()) {
+    if (position % 50 === 0)
+        say(`Checking ballot ${position + 1} of ${board.length}…`);
+
+    if (entry.index !== position)
+        problems.push(`entry ${position}: the index jumps to ${entry.index}`);
+
+    const message = fromBase64(entry.message);
+    const signature = fromBase64(entry.signature);
+    const ciphertext = fromBase64(entry.ciphertext);
+
+    hash = await boardNext(hash, entry.index, fromHexSafe(entry.nullifier),
+                           message, signature, ciphertext);
+
+    if (toHex(hash) !== entry.hash.toLowerCase()) {
+        problems.push(`entry ${entry.index}: the hash chain does not match (tampered board)`);
+        hash = fromHexSafe(entry.hash);
+    }
+
+    if (!await window.crypto.subtle.verify(
+            { name: 'RSA-PSS', saltLength: 48 }, registrar.key, signature, message))
+        problems.push(`entry ${entry.index}: credential not signed by the registrar`);
+
+    if (await nullifierOf(message) !== entry.nullifier.toLowerCase())
+        problems.push(`entry ${entry.index}: the nullifier does not match the message`);
+
+    if (seen.has(entry.nullifier))
+        problems.push(`entry ${entry.index}: repeated credential (double vote)`);
+    seen.add(entry.nullifier);
+
+    // Yield to the browser now and then so the page stays responsive on a large board.
+    if (position % 50 === 0) await new Promise(r => setTimeout(r));
+}
+
+// --- 3. Census >= credentials >= votes ---
+
+if (board.length > published.issuedCredentials)
+    problems.push(`there are ${board.length} votes and only ${published.issuedCredentials} credentials issued`);
+if (published.issuedCredentials > published.censusSize)
+    problems.push(`${published.issuedCredentials} credentials were issued against a census of ${published.censusSize}`);
+
+// --- 4. The tally ---
+
+say('Decrypting the ballots…');
+const tally = new Map(election.candidates.map(c => [c.id, 0]));
+const valid = new Set(election.candidates.map(c => c.id));
+let blank = 0, spoilt = 0;
+
+for (const entry of board) {
+    let choices;
+    try {
+        choices = await decryptBallot(privateKey, fromBase64(entry.ciphertext));
+    } catch {
+        spoilt++;
+        continue;
+    }
+
+    const wellFormed =
+        Array.isArray(choices) &&
+        choices.length <= election.maxChoices &&
+        new Set(choices).size === choices.length &&
+        choices.every(id => valid.has(id));
+
+    if (!wellFormed) { spoilt++; continue; }
+    if (choices.length === 0) { blank++; continue; }
+
+    for (const id of choices) tally.set(id, tally.get(id) + 1);
+}
+
+// --- 5. Show it ---
+
+$('verdict').className = `verdict ${problems.length === 0 ? 'ok' : 'bad'}`;
+$('verdict').textContent = problems.length === 0
+    ? 'Verified: chain intact, every signature valid, no double votes.'
+    : `${problems.length} problem(s) found — this result cannot be trusted.`;
+
+if (problems.length > 0) {
+    $('verdictDetail').textContent = 'These checks were recomputed in this browser and did not pass:';
+    $('problems').classList.remove('hidden');
+    $('problems').innerHTML = '';
+    for (const problem of problems.slice(0, 50)) {
+        const item = document.createElement('li');
+        item.textContent = problem;
+        $('problems').appendChild(item);
+    }
+}
+
+const highest = Math.max(1, ...tally.values());
+$('results').classList.remove('hidden');
+$('tally').innerHTML = '';
+for (const candidate of [...election.candidates].sort((a, b) => tally.get(b.id) - tally.get(a.id)
+                                                              || a.name.localeCompare(b.name))) {
+    const votes = tally.get(candidate.id);
+    const item = document.createElement('li');
+    item.innerHTML = `
+        <span class="name"></span>
+        <span class="votes"></span>
+        <span class="bar"><span style="width:${(votes / highest) * 100}%"></span></span>`;
+    item.querySelector('.name').textContent = candidate.name;
+    item.querySelector('.votes').textContent =
+        `${votes} ${votes === 1 ? 'vote' : 'votes'}`;
+    $('tally').appendChild(item);
+}
+
+const turnout = published.censusSize === 0 ? 0 : 100 * board.length / published.censusSize;
+$('summary').classList.remove('hidden');
+$('figures').innerHTML = '';
+for (const [value, label] of [
+    [board.length, 'ballots'],
+    [blank, 'blank'],
+    ...(spoilt > 0 ? [[spoilt, 'spoilt']] : []),
+    [published.issuedCredentials, 'credentials'],
+    [published.censusSize, 'census'],
+    [`${turnout.toFixed(1)} %`, 'turnout']
+]) {
+    const figure = document.createElement('div');
+    figure.className = 'figure';
+    figure.innerHTML = '<b></b><span></span>';
+    figure.querySelector('b').textContent = value;
+    figure.querySelector('span').textContent = label;
+    $('figures').appendChild(figure);
+}
+
+$('head').textContent = toHex(hash);
+$('custody').textContent = election.custody
+    ? `The election key was split among ${election.custody.trustees} trustees, ` +
+      `${election.custody.threshold} of whom were needed to open the ballot box.`
+    : 'The election key was held whole by the organiser.';
+
+$('receiptLookup').classList.remove('hidden');
+$('lookup').addEventListener('click', () => {
+    const wanted = $('receipt').value.trim().toLowerCase();
+    const status = $('lookupStatus');
+    const entry = board.find(e => e.hash.toLowerCase() === wanted);
+
+    status.className = `status ${entry ? 'ok' : 'bad'}`;
+    status.textContent = entry
+        ? `Found: your ballot is number ${entry.index} of the ${board.length} counted.`
+        : 'That receipt is not on the published board. Keep it and report it.';
+});
+
+function fromHexSafe(text) {
+    return Uint8Array.from(text.match(/../g) ?? [], h => parseInt(h, 16));
+}
+</script>
+</body>
+</html>

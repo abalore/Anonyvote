@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voting — Anonyvote</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<main>
+    <header>
+        <span class="phase">Phase 2 of 2 · Voting</span>
+        <h1 id="title">Loading…</h1>
+        <p id="subtitle"></p>
+    </header>
+
+    <div id="closed" class="panel notice hidden"></div>
+
+    <section id="noCredential" class="panel hidden">
+        <h2>You need your credential</h2>
+        <p class="muted">
+            There is no credential saved in this browser. If you registered on another device,
+            load the backup file you downloaded then.
+        </p>
+        <div class="actions">
+            <input type="file" id="file" accept="application/json" hidden>
+            <button id="load" class="secondary">Load credential…</button>
+        </div>
+        <p id="loadStatus" class="status"></p>
+    </section>
+
+    <section id="ballot" class="panel hidden">
+        <h2>Your ballot</h2>
+        <p class="muted">
+            Choose up to <strong id="maximum"></strong> candidates.
+            <span class="counter" id="counter"></span>
+        </p>
+        <ul class="candidates" id="candidateList"></ul>
+
+        <div class="actions">
+            <button id="vote">Vote</button>
+            <button id="blank" class="secondary">Cast a blank vote</button>
+        </div>
+        <p class="muted" style="margin-top:1rem">
+            The ballot is encrypted in your browser before it leaves. This ballot box does not
+            know who you are: no session, no account, no record of your IP address.
+        </p>
+        <p id="voteStatus" class="status"></p>
+    </section>
+
+    <section id="done" class="panel hidden">
+        <h2>Vote cast</h2>
+        <p>Your ballot is number <strong id="index"></strong> on the public board.</p>
+
+        <div class="receipt">
+            <div class="muted">Your receipt</div>
+            <div class="mono" id="receipt"></div>
+        </div>
+
+        <p class="muted">
+            Keep it. With it you can check, now and after the count, that your ballot is still
+            on the board and nobody has removed it.
+        </p>
+
+        <div class="actions">
+            <button id="check" class="secondary">Check on the board</button>
+            <button id="downloadReceipt" class="secondary">Download receipt</button>
+        </div>
+        <p id="checkStatus" class="status"></p>
+    </section>
+
+    <footer>
+        <a href="results.html">Results</a> ·
+        the whole board is at <a href="/api/board">/api/board</a>
+        and its head at <a href="/api/board/head">/api/board/head</a>.
+    </footer>
+</main>
+
+<script type="module">
+import { electionPublicKey, encryptBallot, toBase64, api } from './anonyvote.js';
+
+const $ = id => document.getElementById(id);
+const election = await api('/api/election');
+const credentialKey = `anonyvote:credential:${election.id}`;
+const receiptKey = `anonyvote:receipt:${election.id}`;
+
+$('title').textContent = election.name;
+$('subtitle').textContent =
+    `${election.candidates.length} candidates · up to ${election.maxChoices} are chosen`;
+$('maximum').textContent = election.maxChoices;
+
+let credential = JSON.parse(localStorage.getItem(credentialKey) ?? 'null');
+const previousReceipt = JSON.parse(localStorage.getItem(receiptKey) ?? 'null');
+
+if (previousReceipt) {
+    showReceipt(previousReceipt);
+} else if (election.phase !== 'Voting') {
+    $('closed').classList.remove('hidden');
+    $('closed').innerHTML = election.phase === 'Registration'
+        ? 'Voting has not opened yet. Registration comes first; come back when the ballot box is announced as open.'
+        : `Voting is not open (current phase: <strong>${election.phase}</strong>).`;
+} else if (credential) {
+    drawBallot();
+} else {
+    $('noCredential').classList.remove('hidden');
+}
+
+// --- Loading a credential from a file ---------------------------------------
+
+$('load')?.addEventListener('click', () => $('file').click());
+
+$('file')?.addEventListener('change', async e => {
+    const status = $('loadStatus');
+    try {
+        const data = JSON.parse(await e.target.files[0].text());
+        if (!data.message || !data.signature) throw new Error('that file is not a credential');
+        if (data.electionId && data.electionId !== election.id)
+            throw new Error('that credential belongs to another election');
+
+        credential = data;
+        localStorage.setItem(credentialKey, JSON.stringify(data));
+        $('noCredential').classList.add('hidden');
+        drawBallot();
+    } catch (error) {
+        status.className = 'status bad';
+        status.textContent = error.message;
+    }
+});
+
+// --- The ballot -------------------------------------------------------------
+
+function drawBallot() {
+    $('ballot').classList.remove('hidden');
+    const list = $('candidateList');
+
+    list.innerHTML = '';
+    for (const candidate of election.candidates) {
+        const item = document.createElement('li');
+        item.innerHTML = `
+            <label class="candidate">
+                <input type="checkbox" value="${candidate.id}">
+                <span></span>
+            </label>`;
+        item.querySelector('span').textContent = candidate.name;
+        list.appendChild(item);
+    }
+
+    list.addEventListener('change', updateLimit);
+    updateLimit();
+}
+
+const ticked = () => [...document.querySelectorAll('#candidateList input:checked')];
+
+function updateLimit() {
+    const chosen = ticked().length;
+    const full = chosen >= election.maxChoices;
+
+    for (const box of document.querySelectorAll('#candidateList input'))
+        box.disabled = full && !box.checked;
+
+    $('counter').textContent = `${chosen} of ${election.maxChoices} chosen`;
+    $('vote').disabled = chosen === 0;
+}
+
+$('vote')?.addEventListener('click', () => cast(ticked().map(c => Number(c.value))));
+
+$('blank')?.addEventListener('click', () => {
+    if (confirm('Cast a blank vote? It cannot be changed afterwards.')) cast([]);
+});
+
+async function cast(choices) {
+    const status = $('voteStatus');
+    $('vote').disabled = $('blank').disabled = true;
+    status.className = 'status';
+    status.textContent = 'Encrypting the ballot…';
+
+    try {
+        const key = await electionPublicKey(election.electionPublicKeyPem);
+        const encrypted = await encryptBallot(key, choices);
+
+        status.textContent = 'Dropping it into the ballot box…';
+        const receipt = await api('/api/cast', {
+            message: credential.message,
+            signature: credential.signature,
+            ciphertext: toBase64(encrypted)
+        });
+
+        localStorage.setItem(receiptKey, JSON.stringify(receipt));
+        $('ballot').classList.add('hidden');
+        showReceipt(receipt);
+    } catch (error) {
+        status.className = 'status bad';
+        status.textContent = error.message;
+        $('blank').disabled = false;
+        updateLimit();
+    }
+}
+
+// --- The receipt ------------------------------------------------------------
+
+function showReceipt(receipt) {
+    $('ballot').classList.add('hidden');
+    $('noCredential').classList.add('hidden');
+    $('closed').classList.add('hidden');
+    $('done').classList.remove('hidden');
+    $('index').textContent = receipt.index;
+    $('receipt').textContent = receipt.entryHash;
+
+    $('downloadReceipt').addEventListener('click', () => {
+        const blob = new Blob([JSON.stringify(receipt, null, 2)], { type: 'application/json' });
+        const link = Object.assign(document.createElement('a'), {
+            href: URL.createObjectURL(blob),
+            download: `receipt-${election.id}.json`
+        });
+        link.click();
+        URL.revokeObjectURL(link.href);
+    });
+
+    $('check').addEventListener('click', async () => {
+        const status = $('checkStatus');
+        status.className = 'status';
+        status.textContent = 'Looking on the board…';
+
+        try {
+            const page = await api(`/api/board?from=${receipt.index}&limit=1`);
+            const entry = page.entries[0];
+            const present = entry?.hash === receipt.entryHash;
+
+            status.className = `status ${present ? 'ok' : 'bad'}`;
+            status.textContent = present
+                ? `Your ballot is still on the board (${page.count} ballots cast).`
+                : 'WARNING: your receipt does not match the board. Keep this receipt and report it.';
+        } catch (error) {
+            status.className = 'status bad';
+            status.textContent = error.message;
+        }
+    });
+}
+</script>
+</body>
+</html>

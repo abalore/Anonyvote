@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Registration — Anonyvote</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<main>
+    <header>
+        <span class="phase">Phase 1 of 2 · Registration</span>
+        <h1 id="title">Loading…</h1>
+        <p id="subtitle"></p>
+    </header>
+
+    <div id="closed" class="panel notice hidden"></div>
+
+    <section id="form" class="panel hidden">
+        <h2>Redeem your code</h2>
+        <p class="muted">
+            Your browser is about to generate a voting credential and <strong>blind</strong> it
+            before sending it. This server will sign something it cannot read: it knows you are
+            entitled to vote, but it will never be able to link your credential back to you.
+        </p>
+
+        <form id="redeem">
+            <label for="code">Single-use code</label>
+            <input id="code" type="text" inputmode="latin" autocomplete="off"
+                   spellcheck="false" placeholder="XXXXX-XXXXX-XXXXX-XXXXX" required>
+            <div class="actions">
+                <button type="submit" id="submit">Get credential</button>
+            </div>
+        </form>
+        <p id="formStatus" class="status"></p>
+    </section>
+
+    <section id="success" class="panel hidden">
+        <h2>Credential obtained</h2>
+        <p>
+            It is saved in this browser. When voting opens, come back with
+            <strong>this same device</strong> or bring the backup file.
+        </p>
+
+        <div class="notice">
+            Without this credential you cannot vote, and <strong>nobody can issue you another
+            one</strong>: the registrar no longer knows which one is yours. Download the backup.
+        </div>
+
+        <div class="receipt">
+            <div class="muted">Your credential's identifier</div>
+            <div class="mono" id="fingerprint"></div>
+        </div>
+
+        <div class="actions">
+            <button id="download">Download backup</button>
+        </div>
+    </section>
+
+    <footer>
+        Anonyvote · this page's source is auditable: all the blinding happens here, in your
+        own browser.
+    </footer>
+</main>
+
+<script type="module">
+import { registrarPublicKey, prepareAndBlind, unblind, toBase64, fromBase64, api }
+    from './anonyvote.js';
+
+const $ = id => document.getElementById(id);
+const election = await api('/api/election');
+const storageKey = `anonyvote:credential:${election.id}`;
+
+$('title').textContent = election.name;
+$('subtitle').textContent =
+    `${election.candidates.length} candidates · up to ${election.maxChoices} are chosen`;
+
+const saved = localStorage.getItem(storageKey);
+if (saved) {
+    showSuccess(JSON.parse(saved));
+} else if (election.phase !== 'Registration') {
+    $('closed').classList.remove('hidden');
+    $('closed').innerHTML = election.phase === 'Voting'
+        ? 'Registration has ended and voting is open. If you have a credential, go to the ballot box; if you do not, it can no longer be obtained.'
+        : `Registration is not open at the moment (current phase: <strong>${election.phase}</strong>).`;
+} else {
+    $('form').classList.remove('hidden');
+}
+
+// Formats the code as it is typed: XXXXX-XXXXX-XXXXX-XXXXX
+$('code')?.addEventListener('input', e => {
+    const clean = e.target.value.toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, 20);
+    e.target.value = clean.match(/.{1,5}/g)?.join('-') ?? clean;
+});
+
+$('redeem')?.addEventListener('submit', async e => {
+    e.preventDefault();
+    const status = $('formStatus');
+    $('submit').disabled = true;
+    status.className = 'status';
+    status.textContent = 'Generating the credential and blinding it…';
+
+    try {
+        const registrar = await registrarPublicKey(election.registrarPublicKeyPem);
+        const { prepared, blinded, inverse } = await prepareAndBlind(registrar);
+
+        status.textContent = 'Asking the registrar to sign it…';
+        const response = await api('/api/register', {
+            code: $('code').value,
+            blindedMessage: toBase64(blinded)
+        });
+
+        const signature = await unblind(
+            registrar, prepared, fromBase64(response.blindSignature), inverse);
+
+        const credential = {
+            electionId: election.id,
+            electionName: election.name,
+            message: toBase64(prepared),
+            signature: toBase64(signature)
+        };
+        localStorage.setItem(storageKey, JSON.stringify(credential));
+        showSuccess(credential);
+    } catch (error) {
+        status.className = 'status bad';
+        status.textContent = error.message;
+        $('submit').disabled = false;
+    }
+});
+
+function showSuccess(credential) {
+    $('form').classList.add('hidden');
+    $('closed').classList.add('hidden');
+    $('success').classList.remove('hidden');
+
+    // Only so the voter can tell one credential from another; it identifies nobody.
+    $('fingerprint').textContent = credential.message.slice(0, 24) + '…';
+
+    $('download').addEventListener('click', () => {
+        const blob = new Blob([JSON.stringify(credential, null, 2)], { type: 'application/json' });
+        const link = Object.assign(document.createElement('a'), {
+            href: URL.createObjectURL(blob),
+            download: `credential-${credential.electionId}.json`
+        });
+        link.click();
+        URL.revokeObjectURL(link.href);
+    });
+}
+</script>
+</body>
+</html>
